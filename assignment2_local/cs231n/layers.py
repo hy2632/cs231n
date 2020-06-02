@@ -770,9 +770,9 @@ def svm_loss(x, y):
     N = x.shape[0]
     correct_class_scores = x[np.arange(N), y]
     margins = np.maximum(0, x - correct_class_scores[:, np.newaxis] + 1.0)
-    margins[np.arange(N), y] = 0
-    loss = np.sum(margins) / N
-    num_pos = np.sum(margins > 0, axis=1)
+    margins[np.arange(N), y] = 0 # No loss at correct labels
+    loss = np.sum(margins) / N # Average loss per data point
+    num_pos = np.sum(margins > 0, axis=1) #when margins >0, derivative nonzero.
     dx = np.zeros_like(x)
     dx[margins > 0] = 1
     dx[np.arange(N), y] -= num_pos
