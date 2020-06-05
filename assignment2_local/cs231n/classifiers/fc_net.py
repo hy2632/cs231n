@@ -190,7 +190,7 @@ class FullyConnectedNet(object):
           this datatype. float32 is faster but less accurate, so you should use
           float64 for numeric gradient checking.
         - seed: If not None, then pass this random seed to the dropout layers. This
-          will make the dropout layers deteriminstic so we can gradient check the
+          will make the dropout layers determinstic so we can gradient check the
           model.
         """
         self.normalization = normalization
@@ -214,7 +214,24 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        print("\n*******Brief description*******")
+        print("hidden_dims_length:", len(hidden_dims))
+        print("num_layers:", self.num_layers)
+        print("dims: ",[input_dim] + hidden_dims + [num_classes])
+        print("*******************************\n")
+
+        self.params['W1'] = np.random.normal(0, weight_scale, (input_dim, hidden_dims[0]))
+        self.params['b1'] = np.zeros(shape=(hidden_dims[0], ))
+
+        for i in range(0, self.num_layers-2):
+            key_W = f"W{i+2}"
+            key_b = f"b{i+2}"
+            self.params[key_W] = np.random.normal(0, weight_scale, (hidden_dims[i] , hidden_dims[i + 1]))
+            self.params[key_b] = np.zeros(shape=(hidden_dims[i+1], ))
+
+        self.params[f'W{self.num_layers}'] = np.random.normal(
+            0, weight_scale, (hidden_dims[self.num_layers - 2], num_classes))
+        self.params[f'b{self.num_layers}'] = np.zeros(shape=(num_classes, ))
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -276,7 +293,22 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # {affine-relu-}*(L-1)-affine-softmax
+
+        ar_cache = {}
+        layer_input = X
+
+        for lay in range(self.num_layers - 1):
+            layer_input, ar_cache[lay] = affine_relu_forward(
+                layer_input, self.params[f"W{lay+1}"], self.params[f"b{lay+1}"])
+        # out, ((x_before_aff, w, b), x_before_relu)
+
+        # last affine
+        ar_out, ar_cache[self.num_layers - 1] = affine_forward(
+            layer_input, self.params[f"W{self.num_layers}"],
+            self.params[f"b{self.num_layers}"])
+
+        scores = ar_out
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -303,7 +335,31 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # Last affine-softmax
+
+
+        # change to numpy array
+        loss, dx = softmax_loss(scores, y)
+        # take out W in cache_records
+        W_array = np.array(
+          [ar_cache[i][0][1] for i in range(self.num_layers - 1)]
+          + [ar_cache[self.num_layers - 1][1]]
+          )
+
+        W_sqr_array = [np.sum(w*w) for w in W_array]
+        loss += 0.5 * self.reg * np.sum(W_sqr_array)
+
+        # backprop the last layer
+        dx, grads[f"W{self.num_layers}"], grads[f"b{self.num_layers}"] = affine_backward(dx, ar_cache[self.num_layers - 1])
+        grads[f"W{self.num_layers}"] += self.reg * W_array[self.num_layers - 1]
+
+        # backprop the loops
+        for lay in range(self.num_layers - 2, -1, -1):
+            dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"] = affine_relu_backward(
+                dx, ar_cache[lay])
+            # Add the gradient of regularization
+            grads[f"W{lay+1}"] += self.reg * W_array[lay]
+
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
