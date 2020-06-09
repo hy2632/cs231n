@@ -133,7 +133,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
 
     During training the sample mean and (uncorrected) sample variance are
     computed from minibatch statistics and used to normalize the incoming data.
-    During training we also keep an exponentially decaying running mean of the
+    During training we also keep an TODO: exponentially decaying running mean of the
     mean and variance of each feature, and these averages are used to normalize
     data at test-time.
 
@@ -198,7 +198,17 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+
+        sample_mean = np.mean(x, axis=0)
+        sample_var = np.var(x, axis=0)
+
+        xhat = (x - sample_mean) / np.sqrt(sample_var + eps)
+        out = yhat = gamma * xhat + beta
+
+        cache = (gamma, x, sample_mean, sample_var, eps, xhat)
+
+        running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+        running_var = momentum * running_var + (1 - momentum) * sample_var
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -213,7 +223,8 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        scale = gamma / (np.sqrt(running_var + eps))
+        out = scale * (x - running_mean) + beta
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -255,7 +266,39 @@ def batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    (gamma, x, sample_mean, sample_var, eps, xhat) = cache
+    mu = sample_mean
+    var = sample_var
+    sd = np.sqrt(var + eps)
+    isd = 1 / sd
+    x_m_mu = x - mu
+    N,D = x.shape
+
+    # dout, out = yhat = gamma * xhat + beta
+    # https://kratzert.github.io/2016/02/12/understanding-the-gradient-flow-through-the-batch-normalization-layer.html
+
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(xhat * dout, axis=0)
+    dxhat = dout * gamma
+
+    # xhat(N,) = x_m_mu(N,D)*isd(D,)
+    disd = np.sum(dxhat * x_m_mu, axis=0)
+    dx_m_mu = dxhat * isd #Notice that isd might also include x_m_mu, so this part of gradient should be added back
+
+    # isd = 1/sd, sd(N,) isd(N,) sd = 1/isd
+    dsd = -(isd ** 2) * disd
+    # sd(D,) = np.sqrt(var + eps)
+    dvar = 0.5 / np.sqrt(var + eps) * dsd
+    # var = 1/N * Sum(x_m_mu^2)
+    dx_m_mu_sqr = dvar / N * np.ones((N,D))
+    dx_m_mu += 2 * x_m_mu * dx_m_mu_sqr
+
+    # x_m_mu(N,D) = x(N,D)-mu(D,) Notice that mu also includes x
+    dx = dx_m_mu
+    dmu = -np.sum(dx_m_mu, axis=0)
+
+    # mu(D,) = 1/N * Sum(Xi(D,))
+    dx += np.ones((N, D)) * dmu / N
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -290,12 +333,29 @@ def batchnorm_backward_alt(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # https://kevinzakka.github.io/2016/09/14/batch_normalization/
+
+    N, D = dout.shape
+    (gamma, x, sample_mean, sample_var, eps, xhat) = cache
+    x_mu = sample_mean
+    x_hat = xhat
+    inv_var = 1 / np.sqrt(sample_var + eps)
+
+
+    # intermediate partial derivatives
+    dxhat = dout * gamma
+
+    # final partial derivatives
+    dx = (1. / N) * inv_var * (N * dxhat - np.sum(dxhat, axis=0) -
+                                x_hat * np.sum(dxhat * x_hat, axis=0))
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(x_hat * dout, axis=0)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
+
 
     return dx, dgamma, dbeta
 
@@ -322,8 +382,8 @@ def layernorm_forward(x, gamma, beta, ln_param):
     - out: of shape (N, D)
     - cache: A tuple of values needed in the backward pass
     """
-    out, cache = None, None
     eps = ln_param.get("eps", 1e-5)
+    out, cache = None, None
     ###########################################################################
     # TODO: Implement the training-time forward pass for layer norm.          #
     # Normalize the incoming data, and scale and  shift the normalized data   #
@@ -336,7 +396,13 @@ def layernorm_forward(x, gamma, beta, ln_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # mu, sigma : when bn, 1*D, when ln, N*1
+    # change the axis of calculating mean and var, keepdims
+    sample_mean = np.mean(x, axis=1, keepdims=True)
+    sample_var = np.var(x, axis=1, keepdims=True)
+    xhat = (x - sample_mean) / np.sqrt(sample_var + eps)
+    out = yhat = gamma * xhat + beta
+    cache = (gamma, x, sample_mean, sample_var, eps, xhat)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -371,7 +437,27 @@ def layernorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, D = dout.shape
+    (gamma, x, sample_mean, sample_var, eps, xhat) = cache
+    
+    x_hat = xhat
+    print(x_hat.shape)
+    # Change sample_mean
+    sample_mean = np.mean(x, axis=1, keepdims=True)
+    sample_var = np.var(x, axis=1, keepdims=True)
+
+    inv_var = 1 / np.sqrt(sample_var + eps)
+
+    # intermediate partial derivatives
+    dxhat = dout * gamma
+
+    # final partial derivatives
+    dx = (1. / N) * inv_var * (N * dxhat - np.sum(dxhat, axis=0) -
+                               x_hat * np.sum(dxhat * x_hat, axis=0))
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(x_hat * dout, axis=0)
+
+    
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################

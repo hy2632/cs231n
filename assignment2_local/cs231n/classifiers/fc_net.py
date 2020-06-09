@@ -214,30 +214,30 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        print("\n*******Brief description*******")
-        print("hidden_dims_length:", len(hidden_dims))
-        print("num_layers:", self.num_layers)
-        print("dims: ",[input_dim] + hidden_dims + [num_classes])
-        print("*******************************\n")
+        # print("\n*******Brief description*******")
+        # print("hidden_dims_length:", len(hidden_dims))
+        # print("num_layers:", self.num_layers)
+        # print("dims: ",[input_dim] + hidden_dims + [num_classes])
+        # print("*******************************\n")
 
-        self.params['W1'] = np.random.normal(0, weight_scale, (input_dim, hidden_dims[0]))
-        self.params['b1'] = np.zeros(shape=(hidden_dims[0], ))
-
-        for i in range(0, self.num_layers-2):
-            key_W = f"W{i+2}"
-            key_b = f"b{i+2}"
-            self.params[key_W] = np.random.normal(0, weight_scale, (hidden_dims[i] , hidden_dims[i + 1]))
-            self.params[key_b] = np.zeros(shape=(hidden_dims[i+1], ))
+        layer_input_dim = input_dim
+        for i in range(0, self.num_layers-1):
+            self.params[f"W{i+1}"] = np.random.normal(
+                0, weight_scale, (layer_input_dim, hidden_dims[i]))
+            self.params[f"b{i+1}"] = np.zeros(shape=(hidden_dims[i],))
+            layer_input_dim = hidden_dims[i]
+            # Add gamma and beta.
+            if (self.normalization == "batchnorm") | (self.normalization == "layernorm"):
+                self.params[f"gamma{i+1}"] = np.ones(hidden_dims[i])
+                self.params[f"beta{i+1}"] = np.zeros(hidden_dims[i])
 
         self.params[f'W{self.num_layers}'] = np.random.normal(
             0, weight_scale, (hidden_dims[self.num_layers - 2], num_classes))
         self.params[f'b{self.num_layers}'] = np.zeros(shape=(num_classes, ))
-
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
-
         # When using dropout we need to pass a dropout_param dictionary to each
         # dropout layer so that the layer knows the dropout probability and the mode
         # (train / test). You can pass the same dropout_param to each dropout layer.
@@ -255,9 +255,11 @@ class FullyConnectedNet(object):
         self.bn_params = []
         if self.normalization == "batchnorm":
             self.bn_params = [{"mode": "train"} for i in range(self.num_layers - 1)]
+        # Add ln_params
+        self.ln_params = []
         if self.normalization == "layernorm":
-            self.bn_params = [{} for i in range(self.num_layers - 1)]
-
+            self.ln_params = [{"mode": "train"} for i in range(self.num_layers - 1)]
+        
         # Cast all parameters to the correct datatype
         for k, v in self.params.items():
             self.params[k] = v.astype(dtype)
@@ -298,10 +300,27 @@ class FullyConnectedNet(object):
         ar_cache = {}
         layer_input = X
 
+        # for lay in range(self.num_layers - 1):
+        #     layer_input, ar_cache[lay] = affine_relu_forward(
+        #         layer_input, self.params[f"W{lay+1}"], self.params[f"b{lay+1}"])
+        # # out, ((x_before_aff, w, b), x_before_relu)
+
+        # add BatchNorm
         for lay in range(self.num_layers - 1):
-            layer_input, ar_cache[lay] = affine_relu_forward(
-                layer_input, self.params[f"W{lay+1}"], self.params[f"b{lay+1}"])
-        # out, ((x_before_aff, w, b), x_before_relu)
+            if  self.normalization == "batchnorm":
+                layer_input, ar_cache[lay] = affine_bn_relu_forward(
+                    layer_input, self.params[f"W{lay+1}"],
+                    self.params[f"b{lay+1}"], self.params[f"gamma{lay+1}"],
+                    self.params[f"beta{lay+1}"], self.bn_params[lay])
+            elif self.normalization == "layernorm":
+                layer_input, ar_cache[lay] = affine_ln_relu_forward(
+                    layer_input, self.params[f"W{lay+1}"],
+                    self.params[f"b{lay+1}"], self.params[f"gamma{lay+1}"],
+                    self.params[f"beta{lay+1}"], self.ln_params[lay])
+            elif self.normalization == None:
+                layer_input, ar_cache[lay] = affine_relu_forward(
+                  layer_input, self.params[f"W{lay+1}"], self.params[f"b{lay+1}"])
+        # out, ((x_before_aff, w, b),(gamma, x_before_bn, sample_mean, sample_var, eps, xhat), x_before_relu)
 
         # last affine
         ar_out, ar_cache[self.num_layers - 1] = affine_forward(
@@ -336,8 +355,6 @@ class FullyConnectedNet(object):
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
         # Last affine-softmax
-
-
         # change to numpy array
         loss, dx = softmax_loss(scores, y)
         # take out W in cache_records
@@ -355,8 +372,16 @@ class FullyConnectedNet(object):
 
         # backprop the loops
         for lay in range(self.num_layers - 2, -1, -1):
-            dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"] = affine_relu_backward(
-                dx, ar_cache[lay])
+            if self.normalization == "batchnorm":
+                dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"], grads[f"gamma{lay+1}"], grads[f"beta{lay+1}"] = \
+                affine_bn_relu_backward(dx, ar_cache[lay])
+            elif self.normalization == "layernorm":
+                dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"], grads[f"gamma{lay+1}"], grads[f"beta{lay+1}"] = \
+                affine_ln_relu_backward(dx, ar_cache[lay])
+            elif self.normalization == None:
+                dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"] = \
+                affine_relu_backward(dx, ar_cache[lay])
+
             # Add the gradient of regularization
             grads[f"W{lay+1}"] += self.reg * W_array[lay]
 
