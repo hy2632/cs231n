@@ -259,7 +259,7 @@ class FullyConnectedNet(object):
         self.ln_params = []
         if self.normalization == "layernorm":
             self.ln_params = [{"mode": "train"} for i in range(self.num_layers - 1)]
-        
+
         # Cast all parameters to the correct datatype
         for k, v in self.params.items():
             self.params[k] = v.astype(dtype)
@@ -299,6 +299,8 @@ class FullyConnectedNet(object):
 
         ar_cache = {}
         layer_input = X
+        # add dropout
+        dp_cache = {}
 
         # for lay in range(self.num_layers - 1):
         #     layer_input, ar_cache[lay] = affine_relu_forward(
@@ -317,9 +319,13 @@ class FullyConnectedNet(object):
                     layer_input, self.params[f"W{lay+1}"],
                     self.params[f"b{lay+1}"], self.params[f"gamma{lay+1}"],
                     self.params[f"beta{lay+1}"], self.ln_params[lay])
-            elif self.normalization == None:
+            else:
                 layer_input, ar_cache[lay] = affine_relu_forward(
                   layer_input, self.params[f"W{lay+1}"], self.params[f"b{lay+1}"])
+
+            if self.use_dropout:
+                layer_input, dp_cache[lay] = dropout_forward(layer_input, self.dropout_param)
+
         # out, ((x_before_aff, w, b),(gamma, x_before_bn, sample_mean, sample_var, eps, xhat), x_before_relu)
 
         # last affine
@@ -372,13 +378,15 @@ class FullyConnectedNet(object):
 
         # backprop the loops
         for lay in range(self.num_layers - 2, -1, -1):
+            if self.use_dropout:
+                dx = dropout_backward(dx, dp_cache[lay])
             if self.normalization == "batchnorm":
                 dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"], grads[f"gamma{lay+1}"], grads[f"beta{lay+1}"] = \
                 affine_bn_relu_backward(dx, ar_cache[lay])
             elif self.normalization == "layernorm":
                 dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"], grads[f"gamma{lay+1}"], grads[f"beta{lay+1}"] = \
                 affine_ln_relu_backward(dx, ar_cache[lay])
-            elif self.normalization == None:
+            else:
                 dx, grads[f"W{lay+1}"], grads[f"b{lay+1}"] = \
                 affine_relu_backward(dx, ar_cache[lay])
 

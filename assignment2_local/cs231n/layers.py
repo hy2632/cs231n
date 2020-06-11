@@ -437,27 +437,19 @@ def layernorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    N, D = dout.shape
-    (gamma, x, sample_mean, sample_var, eps, xhat) = cache
-    
-    x_hat = xhat
-    print(x_hat.shape)
-    # Change sample_mean
-    sample_mean = np.mean(x, axis=1, keepdims=True)
-    sample_var = np.var(x, axis=1, keepdims=True)
+    # Credit to : https://github.com/JPLAY0/CS231nAssignment/blob/master/assignment2/cs231n/layers.py
+    gamma, x, mean, var, eps, xhat = cache
+    N = x.shape[1]
+    dbeta = dout.sum(0)
+    dgamma = (xhat * dout).sum(0)
 
-    inv_var = 1 / np.sqrt(sample_var + eps)
-
-    # intermediate partial derivatives
-    dxhat = dout * gamma
-
-    # final partial derivatives
-    dx = (1. / N) * inv_var * (N * dxhat - np.sum(dxhat, axis=0) -
-                               x_hat * np.sum(dxhat * x_hat, axis=0))
-    dbeta = np.sum(dout, axis=0)
-    dgamma = np.sum(x_hat * dout, axis=0)
-
-    
+    dx_hat = dout * gamma
+    dsigma = -0.5 * np.sum(dx_hat * (x - mean), axis=1) * np.power(
+        var.squeeze() + eps, -1.5)
+    dmu = -np.sum(dx_hat / np.sqrt(var + eps),
+                  axis=1).squeeze() - 2 * dsigma * np.sum(x - mean, axis=1) / N
+    dx = dx_hat / np.sqrt(var + eps) + 2.0 * dsigma.reshape(
+        -1, 1) * (x - mean) / N + dmu.reshape(-1, 1) / N
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -506,7 +498,8 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        mask = (np.random.rand(*x.shape) < p) / p
+        out = x * mask
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -517,8 +510,7 @@ def dropout_forward(x, dropout_param):
         # TODO: Implement the test phase forward pass for inverted dropout.   #
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
+        out = x
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -548,9 +540,7 @@ def dropout_backward(dout, cache):
         # TODO: Implement training phase backward pass for inverted dropout   #
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
-
+        dx = dout*mask
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
         #                          END OF YOUR CODE                           #
