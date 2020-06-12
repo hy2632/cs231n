@@ -585,12 +585,67 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    pad = conv_param["pad"]
+    stride = conv_param["stride"]
 
-    # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-    ###########################################################################
-    #                             END OF YOUR CODE                            #
-    ###########################################################################
+    # padding
+    # x_padded = np.ones((N, C, H + 2 * pad, W + 2 * pad))
+    # for n in range(N):
+    #     for c in range(C):
+    #         x_padded[n][c] = np.pad(x[n][c], pad)
+
+    x_padded = np.pad(x, ((0,),(0,),(pad,),(pad,)), "constant")
+
+    # Initialize the shape of output
+    H_ = 1 + (H + 2 * pad - HH) / stride
+    W_ = 1 + (W + 2 * pad - WW) / stride
+    H_ = int(H_)
+    W_ = int(W_)
+
+    out = np.zeros((N, F, H_, W_))
+
+    # =============================================================================
+    # for n in range(N):
+    #     for h_step in range(0, H_):
+    #         for w_step in range(0, W_):
+    #             # map horizontally and vertically
+    #             for f in range(F):
+    #                 # different filters
+    #                 for c in range(C):
+    #                     # filter applies to each channel and sums up
+    #                     out[n][f][h_step][w_step] += np.dot(
+    #                         x_padded[n][c][h_step * stride:h_step * stride + HH,
+    #                                       w_step * stride:w_step * stride +
+    #                                       WW].reshape(-1), w[f][c].reshape(-1))
+    #                 out[n][f][h_step][w_step] += b[f]
+    # =============================================================================
+    # =============================================================================
+    # use fewer loops
+    # for n in range(N):
+    #     for h_step in range(0, H_):
+    #         for w_step in range(0, W_):
+    #             x_chunk = x_padded[:,:,h_step*stride:h_step*stride+HH,w_step*stride:w_step*stride+WW]
+    #             for f in range(F):
+    #                 for c in range(C):
+    #                     out[n][f][h_step][w_step] += np.dot(x_chunk[n][c].reshape(-1), w[f][c].reshape(-1))
+    #                 out[n][f][h_step][w_step] += b[f]
+    # =============================================================================
+
+    # use fewer loops
+    for h_step in range(0, H_):
+        for w_step in range(0, W_):
+            # x_chunk: [N, C, HH, WW]
+            x_chunk = x_padded[:,:,h_step*stride:h_step*stride+HH,w_step*stride:w_step*stride+WW]
+            for f in range(F):
+                # w: [F,C,HH,WW]
+                out[:, f, h_step, w_step] += np.sum(x_chunk*w[f,:,:,:],axis=(1,2,3)) + b[f] # N.B.
+
+# *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+###########################################################################
+#                             END OF YOUR CODE                            #
+###########################################################################
     cache = (x, w, b, conv_param)
     return out, cache
 
@@ -614,7 +669,32 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, w, b, conv_param = cache
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    pad = conv_param["pad"]
+    stride = conv_param["stride"]
+    x_padded = np.pad(x, ((0,),(0,),(pad,),(pad,)), "constant")
+    H_ = 1 + (H + 2 * pad - HH) // stride
+    W_ = 1 + (W + 2 * pad - WW) // stride
+
+    dx = np.zeros_like(x)
+    dx_padded = np.zeros_like(x_padded)
+    dw = np.zeros_like(w)
+    db = np.zeros_like(b)
+
+    db = np.sum(dout, axis=(0, 2, 3))
+
+    for h_step in range(H_):
+        for w_step in range(W_):
+            x_chunk = x_padded[:, :, h_step * stride : h_step * stride + HH, w_step * stride : w_step * stride + WW]
+            for f in range(F):
+                # out[:, f, h_step, w_step] += np.sum(x_chunk * w[f, :, :, :], axis=(1, 2, 3)) + b[f]  # N.B.
+                dw[f, :, :, :] += np.sum(x_chunk * (dout[:, f, h_step, w_step])[:, None, None, None], axis=0)
+            for n in range(N):
+                dx_chunk = np.sum((w[:, :, :, :] * (dout[n, :, h_step, w_step])[:, None, None, None]), axis=0)
+                dx_padded[n, :, h_step * stride:h_step * stride + HH,w_step * stride : w_step * stride + WW] += dx_chunk
+    dx = dx_padded[:,:,pad:-pad,pad:-pad]
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -648,7 +728,23 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+
+    pool_height = pool_param["pool_height"]
+    pool_width = pool_param["pool_width"]
+    stride = pool_param["stride"]
+
+    H_ = 1 + (H - pool_height) // stride
+    W_ = 1 + (W - pool_width) // stride
+
+    out = np.zeros((N, C, H_, W_))
+
+    for h_step in range(0, H_):
+        for w_step in range(0, W_):
+            # x_chunk: [N, C, poolheight, poolwidth]
+            x_chunk = x[:, :, h_step * stride:h_step * stride + pool_height,
+                               w_step * stride:w_step * stride + pool_width]
+            out[:, :, h_step, w_step] = np.max(x_chunk, axis=(2,3))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -675,7 +771,33 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, pool_param = cache
+    pool_height = pool_param["pool_height"]
+    pool_width = pool_param["pool_width"]
+    stride = pool_param["stride"]
+    N, C, H, W = x.shape
+    H_ = 1 + (H - pool_height) // stride
+    W_ = 1 + (W - pool_width) // stride
+    dx = np.zeros(x.shape)
+
+
+    for h_step in range(0, H_):
+        for w_step in range(0, W_):
+            # x_chunk: [N, C, poolheight, poolwidth]
+            # x: [N, C, H, W]
+            x_chunk = x[:, :, h_step * stride:h_step * stride + pool_height,
+                               w_step * stride : w_step * stride + pool_width]
+            dx_chunk = np.zeros(x_chunk.shape)
+            # dout: [N, C, H_, W_]
+
+            # 获得矩阵内最大值坐标？
+            for n in range(N):
+                for c in range(C):
+                    x_chunk_nc = x_chunk[n, c, :]
+                    pos = np.unravel_index(np.argmax(x_chunk_nc), x_chunk_nc.shape)
+                    dx_chunk[n, c, pos[0], pos[1]] = dout[n, c, h_step, w_step]
+            dx[:, :, h_step * stride:h_step * stride + pool_height,
+               w_step * stride:w_step * stride + pool_width] = dx_chunk
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
