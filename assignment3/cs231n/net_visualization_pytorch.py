@@ -34,7 +34,15 @@ def compute_saliency_maps(X, y, model):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    scores = model(X)
+    scores = scores.gather(1, y.view(-1,1)).squeeze()
+    scores.backward(torch.FloatTensor([1 for i in range(scores.shape[0])]))
+
+    saliency = X.grad.data
+
+    saliency = saliency.abs()
+    saliency, i = torch.max(saliency, axis=1)
+    saliency = saliency.squeeze()
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -75,9 +83,22 @@ def make_fooling_image(X, target_y, model):
     # You can print your progress over iterations to check your algorithm.       #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    for i in range(100):
+      scores = model(X_fooling)
+      val, index = scores.data.max(dim=1)
+      if index.item() == target_y:
+        break
+      
+      target_score = scores[0, target_y]
+      
+      target_score.backward() # 1 dim scalar
+      im_grad = X_fooling.grad.data
+      X_fooling.data += learning_rate * (im_grad / im_grad.norm())
+      X_fooling.grad.data.zero_()
 
-    pass
-
+      
+      print(f"rounds: {i}")
+    
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                             END OF YOUR CODE                               #
