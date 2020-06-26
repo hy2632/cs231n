@@ -8,9 +8,14 @@ import numpy as np
 
 from .image_utils import SQUEEZENET_MEAN, SQUEEZENET_STD
 
-dtype = torch.FloatTensor
+# dtype = torch.FloatTensor
 # Uncomment out the following line if you're on a machine with a GPU set up for PyTorch!
-#dtype = torch.cuda.FloatTensor
+dtype = torch.cuda.FloatTensor
+
+
+
+
+
 def content_loss(content_weight, content_current, content_original):
     """
     Compute the content loss for style transfer.
@@ -25,8 +30,10 @@ def content_loss(content_weight, content_current, content_original):
     - scalar content loss
     """
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+    F_l = content_current.view(1,-1)
+    P_l = content_original.view(1,-1)
+    Loss_c = content_weight * torch.sum((F_l - P_l)**2)
+    return Loss_c
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
@@ -46,7 +53,18 @@ def gram_matrix(features, normalize=True):
     """
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    #  the correlations between the values in each channel of the feature map
+    N, C, H, W = features.size()
+    features_reshape = features.view((N, C, -1))
+    # gram = torch.empty(N, C, C)
+    # for n in range(N):
+    #   for i in range(C):
+    #     for j in range(C):
+    #       gram[n, i, j] = torch.sum(features_reshape[n][i] * features_reshape[n][j] )
+    gram = torch.bmm(features_reshape, features_reshape.transpose(1, 2))
+    if normalize:
+      gram /= (H * W * C)
+    return gram
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
@@ -73,8 +91,14 @@ def style_loss(feats, style_layers, style_targets, style_weights):
     # not be very much code (~5 lines). You will need to use your gram_matrix function.
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
 
+    # L_s = torch.sum(style_weights * torch.sum((style_layers - style_targets)**2))
+    Ls = 0
+    for idx in range(len(style_layers)):
+      l = style_layers[idx]
+      w_l = style_weights[idx]
+      Ls += w_l * torch.sum((gram_matrix(feats[l]) - style_targets[idx])**2)
+    return Ls
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
 def tv_loss(img, tv_weight):
@@ -92,7 +116,11 @@ def tv_loss(img, tv_weight):
     # Your implementation should be vectorized and not require any loops!
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    tv_loss = tv_weight * (
+        torch.sum(((torch.roll(img, shifts = 1, dims=2 ) - img)**2)[:, :, 1:, :]) + 
+        torch.sum(((torch.roll(img, shifts = 1, dims=3 ) - img)**2)[:, :, :, 1:])
+    )
+    return tv_loss
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 def preprocess(img, size=512):
